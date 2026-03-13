@@ -11,6 +11,12 @@
         "guzzlehttp/psr7": "^2.0",
         "monolog/monolog": "^3.0"
     },
+    "config": {
+        "allow-plugins": {
+            "composer/installers": true,
+            "php-http/discovery": true
+        }
+    },
     "autoload": {
         "psr-4": {
             "Tob\\Auth0\\": "src/"
