@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Tests\TobAuth0;
 
 use Auth0\SDK\Configuration\SdkConfiguration;
-use PHPUnit\Framework\TestCase;
 use Tob\Auth0\Contracts\SdkInterface;
 use Tob\Auth0\Plugin;
 
-class PluginTest extends TestCase
+class PluginTest extends WpTestCase
 {
     public function testGetConstantReturnsDefinedValue(): void
     {

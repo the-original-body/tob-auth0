@@ -10,8 +10,8 @@ use Auth0\SDK\Contract\API\Management\TicketsInterface;
 use Auth0\SDK\Contract\API\Management\UsersByEmailInterface;
 use Auth0\SDK\Contract\API\Management\UsersInterface;
 use Auth0\SDK\Contract\API\ManagementInterface;
+use Brain\Monkey\Functions;
 use PHPUnit\Framework\MockObject\MockObject;
-use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
 use Tob\Auth0\AccountRepository;
@@ -22,7 +22,7 @@ use Tob\Auth0\Contracts\SdkInterface;
 use Tob\Auth0\Plugin;
 use WP_User;
 
-class SyncTest extends TestCase
+class SyncTest extends WpTestCase
 {
     private SdkInterface&MockObject $sdkMock;
     private DatabaseInterface&MockObject $dbMock;
@@ -34,8 +34,13 @@ class SyncTest extends TestCase
     private Sync $sync;
     private Authentication $auth;
 
+    /** @var array<int, WP_User> Users created during the test */
+    private array $wpUsers = [];
+
     protected function setUp(): void
     {
+        parent::setUp();
+
         $this->sdkMock = $this->createMock(SdkInterface::class);
         $this->dbMock = $this->createMock(DatabaseInterface::class);
         $this->managementMock = $this->createMock(ManagementInterface::class);
@@ -65,6 +70,19 @@ class SyncTest extends TestCase
         $plugin->setClassInstance(Authentication::class, $this->auth);
 
         $this->sync = new Sync($plugin);
+
+        // Stub get_user_by to look up from our in-memory user store
+        Functions\when('get_user_by')->alias(function (string $field, mixed $value) {
+            if ($field === 'ID') {
+                return $this->wpUsers[(int) $value] ?? false;
+            }
+            foreach ($this->wpUsers as $user) {
+                if ($field === 'email' && $user->user_email === $value) {
+                    return $user;
+                }
+            }
+            return false;
+        });
     }
 
     public function testRegisterAddsExpectedHooks(): void
@@ -80,7 +98,6 @@ class SyncTest extends TestCase
     public function testOnCreatedUserSkipsWhenNoDbConnection(): void
     {
         // AUTH0_SYNC_DB_CONNECTION not defined → getDbConnection returns null
-        // Management API should never be called
         $this->usersByEmailMock->expects($this->never())->method('get');
         $this->usersMock->expects($this->never())->method('create');
 
@@ -93,7 +110,7 @@ class SyncTest extends TestCase
             define('AUTH0_SYNC_DB_CONNECTION', 'con_test123');
         }
 
-        // User ID that doesn't exist in WP
+        // User ID that doesn't exist → get_user_by returns false
         $this->usersByEmailMock->expects($this->never())->method('get');
         $this->usersMock->expects($this->never())->method('create');
 
@@ -112,8 +129,6 @@ class SyncTest extends TestCase
         $this->usersMock->expects($this->never())->method('create');
 
         $this->sync->onCreatedUser($user->ID);
-
-        $this->deleteWpUser($user->ID);
     }
 
     public function testOnCreatedUserCreatesAuth0User(): void
@@ -141,8 +156,6 @@ class SyncTest extends TestCase
             ->willReturn($this->makeResponse(201, []));
 
         $this->sync->onCreatedUser($user->ID);
-
-        $this->deleteWpUser($user->ID);
     }
 
     public function testCreateUserWithPasswordUsesProvidedPassword(): void
@@ -171,8 +184,6 @@ class SyncTest extends TestCase
         $this->ticketsMock->expects($this->never())->method('createPasswordChange');
 
         $this->sync->createUserWithPassword($user->ID, 'MySecret123!');
-
-        $this->deleteWpUser($user->ID);
     }
 
     public function testOnUpdatedUserSyncsProfileToAuth0(): void
@@ -201,8 +212,6 @@ class SyncTest extends TestCase
             ->willReturn($this->makeResponse(200, []));
 
         $this->sync->onUpdatedUser($user->ID);
-
-        $this->deleteWpUser($user->ID);
     }
 
     public function testOnUpdatedUserIncludesPasswordWhenPostPass1Set(): void
@@ -232,7 +241,6 @@ class SyncTest extends TestCase
         $this->sync->onUpdatedUser($user->ID);
 
         unset($_POST['pass1']);
-        $this->deleteWpUser($user->ID);
     }
 
     public function testOnUpdatedUserSkipsEmailVerificationWhenConstantNotSet(): void
@@ -256,8 +264,6 @@ class SyncTest extends TestCase
             ->method('createEmailVerification');
 
         $this->sync->onUpdatedUser($user->ID);
-
-        $this->deleteWpUser($user->ID);
     }
 
     /**
@@ -287,8 +293,6 @@ class SyncTest extends TestCase
             ->method('createEmailVerification');
 
         $this->sync->onUpdatedUser($user->ID);
-
-        $this->deleteWpUser($user->ID);
     }
 
     /**
@@ -320,8 +324,6 @@ class SyncTest extends TestCase
             ->willReturn($this->makeResponse(201, []));
 
         $this->sync->onUpdatedUser($user->ID);
-
-        $this->deleteWpUser($user->ID);
     }
 
     public function testOnUpdatedUserSkipsWhenNoConnections(): void
@@ -335,8 +337,6 @@ class SyncTest extends TestCase
         $this->usersMock->expects($this->never())->method('update');
 
         $this->sync->onUpdatedUser($user->ID);
-
-        $this->deleteWpUser($user->ID);
     }
 
     public function testOnPasswordResetDelegatesToUpdatePassword(): void
@@ -361,8 +361,6 @@ class SyncTest extends TestCase
             ->willReturn($this->makeResponse(200, []));
 
         $this->sync->onPasswordReset($user, 'ResetPass789!');
-
-        $this->deleteWpUser($user->ID);
     }
 
     public function testOnDeletedUserDeletesAuth0Account(): void
@@ -420,31 +418,25 @@ class SyncTest extends TestCase
             ->willReturn($this->makeResponse(200, []));
 
         $this->sync->updatePassword($user->ID, 'Direct123!');
-
-        $this->deleteWpUser($user->ID);
     }
 
     // --- Helpers ---
 
     private function createWpUser(int $seed): WP_User
     {
-        $userId = wp_insert_user([
-            'user_login' => 'synctest_' . $seed,
-            'user_email' => 'synctest_' . $seed . '@example.com',
-            'user_pass' => wp_generate_password(),
-            'display_name' => 'Sync Test ' . $seed,
-            'first_name' => 'Sync',
-            'last_name' => 'Test' . $seed,
-            'nickname' => 'synctest' . $seed,
-        ]);
+        $user = $this->createWpUserObject(
+            id: $seed,
+            login: 'synctest_' . $seed,
+            email: 'synctest_' . $seed . '@example.com',
+            displayName: 'Sync Test ' . $seed,
+            firstName: 'Sync',
+            lastName: 'Test' . $seed,
+            nickname: 'synctest' . $seed,
+        );
 
-        return get_user_by('ID', $userId);
-    }
+        $this->wpUsers[$seed] = $user;
 
-    private function deleteWpUser(int $userId): void
-    {
-        require_once ABSPATH . 'wp-admin/includes/user.php';
-        wp_delete_user($userId);
+        return $user;
     }
 
     /**

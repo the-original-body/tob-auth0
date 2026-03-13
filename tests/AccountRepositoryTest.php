@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Tests\TobAuth0;
 
 use Auth0\SDK\Configuration\SdkConfiguration;
-use PHPUnit\Framework\TestCase;
+use Brain\Monkey\Functions;
 use Tob\Auth0\AccountRepository;
 use Tob\Auth0\Contracts\DatabaseInterface;
 use Tob\Auth0\Contracts\SdkInterface;
 use Tob\Auth0\Plugin;
 
-class AccountRepositoryTest extends TestCase
+class AccountRepositoryTest extends WpTestCase
 {
     private DatabaseInterface $dbMock;
     private Plugin $plugin;
@@ -19,6 +19,8 @@ class AccountRepositoryTest extends TestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
+
         $sdkMock = $this->createMock(SdkInterface::class);
         $this->dbMock = $this->createMock(DatabaseInterface::class);
 
@@ -137,41 +139,37 @@ class AccountRepositoryTest extends TestCase
 
     public function testResolveIdentityMatchesByConnectionSub(): void
     {
-        $userId = wp_insert_user([
-            'user_login' => 'tob_auth0_test_sub_' . uniqid(),
-            'user_pass' => wp_generate_password(),
-            'user_email' => 'subtest_' . uniqid() . '@example.com',
-        ]);
+        $user = $this->createWpUserObject(42, email: 'subtest@example.com');
 
         $this->dbMock->method('getTableName')->willReturn('wp_tob_auth0_accounts');
-        $this->dbMock->method('selectRow')->willReturn((object) ['user' => $userId]);
+        $this->dbMock->method('selectRow')->willReturn((object) ['user' => $user->ID]);
+
+        Functions\when('get_user_by')->alias(fn($field, $value) =>
+            $field === 'ID' && (int) $value === $user->ID ? $user : false
+        );
 
         $result = $this->repo->resolveIdentity('auth0|test_resolve', null, null);
 
         $this->assertInstanceOf(\WP_User::class, $result);
-        $this->assertSame($userId, $result->ID);
-
-        wp_delete_user($userId);
+        $this->assertSame($user->ID, $result->ID);
     }
 
     public function testResolveIdentityMatchesByVerifiedEmail(): void
     {
-        $email = 'verified_' . uniqid() . '@example.com';
-        $userId = wp_insert_user([
-            'user_login' => 'tob_auth0_test_email_' . uniqid(),
-            'user_pass' => wp_generate_password(),
-            'user_email' => $email,
-        ]);
+        $email = 'verified@example.com';
+        $user = $this->createWpUserObject(43, email: $email);
 
         $this->dbMock->method('getTableName')->willReturn('wp_tob_auth0_accounts');
         $this->dbMock->method('selectRow')->willReturn(null);
 
+        Functions\when('get_user_by')->alias(fn($field, $value) =>
+            $field === 'email' && $value === $email ? $user : false
+        );
+
         $result = $this->repo->resolveIdentity('auth0|unknown_sub', $email, true);
 
         $this->assertInstanceOf(\WP_User::class, $result);
-        $this->assertSame($userId, $result->ID);
-
-        wp_delete_user($userId);
+        $this->assertSame($user->ID, $result->ID);
     }
 
     public function testResolveIdentityReturnsNullForNonexistentEmail(): void
@@ -179,13 +177,8 @@ class AccountRepositoryTest extends TestCase
         $this->dbMock->method('getTableName')->willReturn('wp_tob_auth0_accounts');
         $this->dbMock->method('selectRow')->willReturn(null);
 
-        $result = $this->repo->resolveIdentity('auth0|sub', 'nonexistent_' . uniqid() . '@example.com', true);
+        $result = $this->repo->resolveIdentity('auth0|sub', 'nonexistent@example.com', true);
 
         $this->assertNull($result);
-    }
-
-    protected function tearDown(): void
-    {
-        wp_cache_flush();
     }
 }

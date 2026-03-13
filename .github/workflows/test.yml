@@ -15,14 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          coverage: none
+      - name: Build container
+        run: docker compose build
 
       - name: Install Composer dependencies
-        run: composer install --no-interaction --prefer-dist
+        run: docker compose run --rm php composer install --no-interaction --prefer-dist
 
       - name: Run PHPUnit
-        run: vendor/bin/phpunit
+        run: docker compose run --rm php vendor/bin/phpunit

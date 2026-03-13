@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\TobAuth0;
 
-use PHPUnit\Framework\TestCase;
 use Tob\Auth0\Cache\WpObjectCacheItem;
 use Tob\Auth0\Cache\WpObjectCachePool;
 
-class CacheTest extends TestCase
+class CacheTest extends WpTestCase
 {
     // -- WpObjectCacheItem -----------------------------------------------------
 
@@ -145,10 +144,5 @@ class CacheTest extends TestCase
     public function testPoolCacheGroup(): void
     {
         $this->assertSame('tob_auth0', WpObjectCachePool::CONST_CACHE_GROUP);
-    }
-
-    protected function tearDown(): void
-    {
-        wp_cache_flush();
     }
 }

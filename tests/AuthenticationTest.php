@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Tests\TobAuth0;
 
 use Auth0\SDK\Configuration\SdkConfiguration;
-use PHPUnit\Framework\TestCase;
 use Tob\Auth0\AccountRepository;
 use Tob\Auth0\Actions\Authentication;
 use Tob\Auth0\Contracts\DatabaseInterface;
 use Tob\Auth0\Contracts\SdkInterface;
 use Tob\Auth0\Plugin;
 
-class AuthenticationTest extends TestCase
+class AuthenticationTest extends WpTestCase
 {
     private SdkInterface $sdkMock;
     private DatabaseInterface $dbMock;
@@ -21,6 +20,8 @@ class AuthenticationTest extends TestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
+
         $this->sdkMock = $this->createMock(SdkInterface::class);
         $this->dbMock = $this->createMock(DatabaseInterface::class);
 
@@ -107,8 +108,7 @@ class AuthenticationTest extends TestCase
 
     public function testOnInitReturnsEarlyWhenNotLoggedIn(): void
     {
-        wp_set_current_user(0);
-
+        // is_user_logged_in returns false by default (from WpTestCase)
         $this->sdkMock->expects($this->never())->method('getCredentials');
         $this->auth->onInit();
     }
@@ -165,10 +165,5 @@ class AuthenticationTest extends TestCase
             ->willReturn(null);
 
         $this->auth->onDeletedUser(999);
-    }
-
-    protected function tearDown(): void
-    {
-        wp_cache_flush();
     }
 }

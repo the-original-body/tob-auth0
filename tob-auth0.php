@@ -4,7 +4,7 @@
  * Plugin Name:       TOB Auth0
  * Description:       Simplified Auth0 login/logout integration for The Original Body platform. Configuration via constants only.
  * Version:           0.0.1
- * Requires PHP:      8.3
+ * Requires PHP:      8.1
  * Author:            The Original Body
  * License:           MIT
  * Text Domain:       tob-auth0
